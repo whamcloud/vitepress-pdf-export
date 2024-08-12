@@ -1,0 +1,16 @@
+[config]
+chrome_cache = "./chrome"
+chrome_version = "1336641"
+output_pdf = "EXAScaler-6.3.1-features-and-procedures-guide.pdf"
+url = "http://localhost:5173"
+vitepress_links = [
+    "../exa-features-procedure-guide/.vitepress/toc_links.json",
+    "../exa-features-procedure-guide/.vitepress/features_guide_links.json",
+    "../exa-features-procedure-guide/.vitepress/procedures_guide_links.json"
+]
+
+[config.print_to_pdf]
+generateDocumentOutline = true
+paperHeight = 11.7 # A4 page
+paperWidth = 8.3
+printBackground = true
