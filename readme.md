@@ -27,7 +27,7 @@ Key               | Description                                                 
 `vitepress_links` | Paths to json file defining the url layout of the VitePress site                                |         | `Vec<PathBuf>`
 
 ### print_to_pdf
-Yes underscore is the default naming scheme but these options come Chrome DevTool Protocol which uses Pascal case. See [Chrome DevTool Protocol](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-printToPDF) for additional options.
+Yes underscore is the default case for TOML but these options come from Chrome DevTool Protocol which uses camel case. See [Chrome DevTool Protocol](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-printToPDF) for additional options.
 Key                       | Description                                               | Type           | Chrome DevTool Protocol Default
 --------------------------|-----------------------------------------------------------|----------------|--------------------------------
 `generateDocumentOutline` | Whether or not to embed the document outline into the PDF | `Option<bool>` | False
