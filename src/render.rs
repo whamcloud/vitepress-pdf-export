@@ -2,13 +2,14 @@ use crate::Config;
 use anyhow::{anyhow, Result};
 use headless_chrome::{FetcherOptions, LaunchOptions, Revision};
 use indexmap::IndexMap;
-use indicatif::style::ProgressStyle;
-use indicatif::ProgressBar;
+use indicatif::{style::ProgressStyle, ProgressBar};
 use serde::Deserialize;
-use std::ffi::OsStr;
-use std::fs::{self, create_dir_all};
-use std::path::PathBuf;
-use std::time::Duration;
+use std::{
+    ffi::OsStr,
+    fs::{self, create_dir_all},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[cfg(target_os = "linux")]
 const PLATFORM: &str = "linux";
@@ -99,7 +100,10 @@ pub async fn get_chrome(config: &Config) -> Result<headless_chrome::Browser> {
 }
 
 /// Use Chrome to render URLs into PDFs
-pub async fn render_urls(config: &Config) -> Result<IndexMap<String, PathBuf>> {
+pub async fn render_urls(
+    config: &Config,
+    pdf_temp_dir: &Path,
+) -> Result<IndexMap<String, PathBuf>> {
     let chrome = get_chrome(config).await?;
 
     let pb = ProgressBar::new(config.urls.len() as u64);
@@ -119,7 +123,7 @@ pub async fn render_urls(config: &Config) -> Result<IndexMap<String, PathBuf>> {
             .wait_until_navigated()?
             .print_to_pdf(Some(config.print_to_pdf.clone()))?;
 
-        let path = PathBuf::from(format!("{i}.pdf"));
+        let path = pdf_temp_dir.join(format!("{i}.pdf"));
 
         fs::write(&path, page_pdf)?;
 

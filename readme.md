@@ -6,7 +6,7 @@ This program does one thing well, export a VitPress site as nice PDF with correc
 * [X] Enumerate URLS from Single URL
 * [X] Use Cached Chrome Build
 * [X] Renders each URL into a PDF file
-  * [ ] TempDir for PDF
+  * [X] TempDir for PDF
 * [X] Merges the PDFs into a Single PDF
   * [X] with Outline
 * [X] Rewrites links between the URLS into PDF

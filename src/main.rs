@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 mod config;
 use config::Config;
@@ -21,8 +22,14 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
     let config = Config::load(&args.config)?;
-    let url_to_pdf = render_urls(&config).await?;
+
+    // We create the pdf_temp_dir here so it will fall out of scope and be deleted when the process exits.
+    let pdf_temp_dir = tempdir()?;
+
+    let url_to_pdf = render_urls(&config, pdf_temp_dir.path()).await?;
+
     merge_pdfs(&config, url_to_pdf)?;
 
     Ok(())
