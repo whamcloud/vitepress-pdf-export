@@ -24,16 +24,15 @@ const PLATFORM_BIN: &str = "chrome-mac/Chromium.app/Contents/MacOS/Chromium";
 
 #[derive(Deserialize)]
 struct KnownGoodVersions {
-    _timestamp: String,
     versions: Vec<Version>,
 }
 
 #[derive(Deserialize)]
 struct Version {
-    _version: String,
     revision: String,
 }
 
+/// Ask google for the latest Known Good Revision of Chrome
 pub async fn get_latest_revision() -> Result<String> {
     let resp = reqwest::get("https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json").await?;
     let kgv = resp.json::<KnownGoodVersions>().await?;
@@ -45,6 +44,7 @@ pub async fn get_latest_revision() -> Result<String> {
         .to_string())
 }
 
+/// Spin up Browser instance. If we don't have a copy of Chrome we will download a copy.
 pub async fn get_chrome(config: &Config) -> Result<headless_chrome::Browser> {
     let revision = match &config.chrome_version {
         Some(r) => r.to_string(),
@@ -59,6 +59,7 @@ pub async fn get_chrome(config: &Config) -> Result<headless_chrome::Browser> {
 
     if chrome_path.exists() {
         println!("Using cached Chrome revision {}", &revision);
+
         headless_chrome::Browser::new(
             LaunchOptions::default_builder()
                 .path(Some(chrome_path.join(PLATFORM_BIN).canonicalize()?))
@@ -70,11 +71,14 @@ pub async fn get_chrome(config: &Config) -> Result<headless_chrome::Browser> {
         )
     } else {
         let pb = ProgressBar::new_spinner();
+
         pb.enable_steady_tick(Duration::from_millis(50));
+
         pb.set_style(ProgressStyle::with_template(&format!(
             "{{spinner:.green}} Downloading Chrome revision {}.",
             &revision
         ))?);
+
         let chrome = headless_chrome::Browser::new(
             LaunchOptions::default_builder()
                 .fetcher_options(
@@ -87,32 +91,43 @@ pub async fn get_chrome(config: &Config) -> Result<headless_chrome::Browser> {
                 .devtools(false)
                 .build()?,
         );
+
         pb.finish_with_message("Finished Downloading Chrome");
+
         chrome
     }
 }
 
+/// Use Chrome to render URLs into PDFs
 pub async fn render_urls(config: &Config) -> Result<IndexMap<String, PathBuf>> {
     let chrome = get_chrome(config).await?;
 
     let pb = ProgressBar::new(config.urls.len() as u64);
+
     pb.enable_steady_tick(Duration::from_millis(50));
 
     let mut map: IndexMap<String, PathBuf> = IndexMap::new();
+
     for (i, url) in config.urls.iter().enumerate() {
         pb.set_style(ProgressStyle::with_template(&format!(
             "{{spinner}} {{bar:.cyan}} {{pos}}/{{len}} rendering {url}"
         ))?);
+
         let tab = chrome.new_tab()?;
         let page_pdf = tab
             .navigate_to(url)?
             .wait_until_navigated()?
             .print_to_pdf(Some(config.print_to_pdf.clone()))?;
+
         let path = PathBuf::from(format!("{i}.pdf"));
+
         fs::write(&path, page_pdf)?;
+
         map.insert(url.clone(), path);
+
         pb.inc(1);
     }
-    pb.finish_with_message("Finished Rendering URLS");
+
+    pb.finish_with_message("Finished Rendering URLs into PDFs");
     Ok(map)
 }

@@ -18,13 +18,13 @@ This program does one thing well, export a VitPress site as nice PDF with correc
 Currently only `MacOS`, `MacOS Arm`, and `Linux` are supported.
 
 ## Config
-Key               | Description                                                                         | Default | Type
-------------------|-------------------------------------------------------------------------------------|---------|-----------------
-`chrome_cache`    | Directory used to download and cache chrome builds                                  | "/tmp"  | `PathBuf`
-`chrome_version`  | Pin Chrome Version to a specfic build. If unset we use that latest known good build | `None`  | `Option<String>`
-`output_pdf`      | The merged PDF file                                                                 |         | `PathBuf`
-`url`             | VitePress URl                                                                       |         | `String`
-`vitepress_links` |                                                                                     |         | `Vec<String>`
+Key               | Description                                                                                     | Default | Type
+------------------|-------------------------------------------------------------------------------------------------|---------|-----------------
+`chrome_cache`    | Directory used to download and cache chrome builds                                              | "/tmp"  | `PathBuf`
+`chrome_version`  | Pin Chrome to a specfic revision, e.g., `1336641`. If unset we use that latest known good build | `None`  | `Option<String>`
+`output_pdf`      | The merged PDF file                                                                             |         | `PathBuf`
+`url`             | VitePress URl.  e.g., `http://localhost:5173`                                                   |         | `String`
+`vitepress_links` | Paths to json file defining the url layout of the VitePress site                                |         | `Vec<PathBuf>`
 
 ### print_to_pdf
 Yes underscore is the default naming scheme but these options come Chrome DevTool Protocol which uses Pascal case. See [Chrome DevTool Protocol](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-printToPDF) for additional options.
