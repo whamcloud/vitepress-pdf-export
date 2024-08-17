@@ -1,6 +1,10 @@
+// Copyright (c) 2024 DDN. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 use anyhow::Result;
 use clap::Parser;
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 use tempfile::tempdir;
 
 mod config;
@@ -20,7 +24,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     let args = Args::parse();
 
     let config = Config::load(&args.config)?;
@@ -30,7 +34,5 @@ async fn main() -> Result<()> {
 
     let url_to_pdf = render_urls(&config, pdf_temp_dir.path()).await?;
 
-    merge_pdfs(&config, url_to_pdf)?;
-
-    Ok(())
+    merge_pdfs(&config, url_to_pdf)
 }

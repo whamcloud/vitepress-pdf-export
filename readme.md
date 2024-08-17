@@ -10,9 +10,8 @@ This program does one thing well, export a VitPress site as nice PDF with correc
 * [X] Merges the PDFs into a Single PDF
   * [X] with Outline
 * [X] Rewrites links between the URLS into PDF
-  * [ ] Rewrites Named Destinations 
+* [X] Add Merge Tests
 * [ ] Add Page Numbers
-* [ ] Add Merge Tests
 
 ## Supported Platforms
 Currently only `MacOS`, `MacOS Arm`, and `Linux` are supported.

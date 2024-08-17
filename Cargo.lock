@@ -971,6 +971,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "insta"
+version = "1.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "810ae6042d48e2c9e9215043563a58a80b877bc863228a74cf10c49d4620a6f5"
+dependencies = [
+ "console",
+ "lazy_static",
+ "linked-hash-map",
+ "similar",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,6 +1683,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
+name = "similar"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1de1d4f81173b03af4c0cbed3c898f6bff5b870e4a7f5d6f4057d62a7a4b686e"
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2105,6 +2123,7 @@ dependencies = [
  "headless_chrome",
  "indexmap",
  "indicatif",
+ "insta",
  "lopdf",
  "reqwest",
  "serde",

@@ -1,3 +1,7 @@
+// Copyright (c) 2024 DDN. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 use anyhow::Result;
 use headless_chrome::types::PrintToPdfOptions;
 use indexmap::{indexset, set::IndexSet};
@@ -23,12 +27,12 @@ pub struct Config {
     /// The merged PDF file  
     pub output_pdf: PathBuf,
     /// `VitePress` Dev URL e.g., `http://localhost:5173``.
-    url: String,
+    pub url: String,
     /// The list of URLS generated from `url` and `vitepress_links`.
     #[serde(skip)]
     pub urls: IndexSet<String>,
     /// List of paths to JSON files that define the `VitePress` site.
-    vitepress_links: Vec<PathBuf>,
+    pub vitepress_links: Vec<PathBuf>,
     /// PDF Generation options see [Chrome DevTool Protocol](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-printToPDF) for documentation.
     pub print_to_pdf: PrintToPdfOptions,
 }
