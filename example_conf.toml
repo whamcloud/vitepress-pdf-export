@@ -4,9 +4,9 @@ chrome_version = "1336641"
 output_pdf = "features-and-procedures-guide.pdf"
 url = "http://localhost:5173"
 vitepress_links = [
-    "./.vitepress/toc_links.json",
-    "./.vitepress/features_guide_links.json",
-    "./.vitepress/procedures_guide_links.json"
+    ".vitepress/toc_links.json",
+    ".vitepress/features_guide_links.json",
+    ".vitepress/procedures_guide_links.json"
 ]
 
 [config.print_to_pdf]
