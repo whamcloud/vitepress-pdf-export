@@ -330,7 +330,6 @@ pub fn merge_pdfs(conf: &Config, url_to_pdf_path: IndexMap<String, PathBuf>) -> 
 
     let problem_urls = rewrite_vitepress_links(conf, &mut pdf, url_to_page_num)?;
 
-    // add_page_numbers(&mut pdf);
     pdf.save(&conf.output_pdf)?;
 
     println!("Merged PDF is avalible here {}", conf.output_pdf.display());
@@ -416,7 +415,7 @@ mod tests {
     }
 
     pub fn generate_pdf_with_outline() -> Document {
-        let mut doc = Document::with_version("1.5");
+        let mut doc = Document::with_version("1.7");
         let pages_id = doc.new_object_id();
         let font_id = doc.add_object(dictionary! {
             "Type" => "Font",
