@@ -1,0 +1,45 @@
+name: Build n Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "ES*"
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash -eux {0}
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run cargo test
+        run: cargo build --release
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vitepress-pdf-export
+          path: |
+            ./target/release/vitepress-pdf-export
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run cargo test
+        run: cargo test --locked

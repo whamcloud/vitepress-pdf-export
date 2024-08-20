@@ -1,0 +1,23 @@
+[package]
+name = "vitepress-pdf-export"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jonathan Parris jparris@ddn.com"]
+license-file = "LICENSE"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = {version = "4.5.13", features = ["derive"]}
+headless_chrome = { git = "https://github.com/whamcloud/rust-headless-chrome", branch = "update_cdp", features = ["fetch"]}
+indexmap = "2.3.0"
+indicatif = "0.17.8"
+lopdf = "0.33.0"
+reqwest = {version = "0.12.5", features = ["json"] }
+serde = {version = "1.0.204", features = ["derive"]}
+serde_json = "1.0.124"
+tempfile = "3.10.1"
+tokio = {version = "1.39.2", features = ["macros", "rt-multi-thread"]}
+toml = "0.8.19"
+
+[dev-dependencies]
+insta = "1.39.0"

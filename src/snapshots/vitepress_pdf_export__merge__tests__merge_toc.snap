@@ -1,0 +1,118 @@
+---
+source: src/merge.rs
+expression: "outline(&pdf,\n    pdf.get_object(cat.get(b\"Outlines\").unwrap().as_reference().unwrap()).unwrap().as_dict().unwrap())"
+---
+Ok(
+    Node {
+        title: "Outline Dictionary",
+        prev: None,
+        next: None,
+        parent: None,
+        childern: [
+            Node {
+                title: "Node 1",
+                prev: None,
+                next: Some(
+                    "Node 1",
+                ),
+                parent: Some(
+                    "Outline Dictionary",
+                ),
+                childern: [
+                    Node {
+                        title: "Node 2",
+                        prev: None,
+                        next: Some(
+                            "Node 3",
+                        ),
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                    Node {
+                        title: "Node 3",
+                        prev: Some(
+                            "Node 2",
+                        ),
+                        next: None,
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                ],
+            },
+            Node {
+                title: "Node 1",
+                prev: Some(
+                    "Node 1",
+                ),
+                next: Some(
+                    "Node 1",
+                ),
+                parent: Some(
+                    "Outline Dictionary",
+                ),
+                childern: [
+                    Node {
+                        title: "Node 2",
+                        prev: None,
+                        next: Some(
+                            "Node 3",
+                        ),
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                    Node {
+                        title: "Node 3",
+                        prev: Some(
+                            "Node 2",
+                        ),
+                        next: None,
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                ],
+            },
+            Node {
+                title: "Node 1",
+                prev: Some(
+                    "Node 1",
+                ),
+                next: None,
+                parent: Some(
+                    "Outline Dictionary",
+                ),
+                childern: [
+                    Node {
+                        title: "Node 2",
+                        prev: None,
+                        next: Some(
+                            "Node 3",
+                        ),
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                    Node {
+                        title: "Node 3",
+                        prev: Some(
+                            "Node 2",
+                        ),
+                        next: None,
+                        parent: Some(
+                            "Node 1",
+                        ),
+                        childern: [],
+                    },
+                ],
+            },
+        ],
+    },
+)
