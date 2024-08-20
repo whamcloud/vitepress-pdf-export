@@ -1,0 +1,27 @@
+name: Build n Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "ES*"
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash -eux {0}
+
+jobs:
+  build-pdf:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run cargo test
+        run: cargo test --locked
