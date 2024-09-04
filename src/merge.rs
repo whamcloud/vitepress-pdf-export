@@ -5,7 +5,10 @@
 use crate::Config;
 use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
-use lopdf::{Dictionary, Document, Object, ObjectId};
+use lopdf::{
+    content::{Content, Operation},
+    dictionary, Dictionary, Document, Object, ObjectId,
+};
 use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
 struct PdfParts {
@@ -94,7 +97,6 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
                 // Saved seperately and processed later
                 outlines.push((*object_id, object.as_dict()?.clone()));
             }
-            "Outline" => {} // Ignored, not supported yet
             _ => {
                 document.objects.insert(*object_id, object.clone());
             }
@@ -318,6 +320,83 @@ fn rewrite_vitepress_links(
     Ok(problem_urls)
 }
 
+fn add_page_numbers(doc: &mut Document, conf: &Config) -> Result<()> {
+    if let Some(style) = &conf.page_number {
+        // Add the font for each page to reference
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => style.font.to_string(),
+        });
+
+        // Go through each page
+        let pages = doc.get_pages();
+        for (page_num, page_id) in pages {
+            let mut font_num = 1;
+            // Get pages Resouces
+            if let Ok(page) = doc.get_dictionary_mut(page_id) {
+                if let Ok(resource_dict) =
+                    page.get_mut(b"Resources").map(|o| o.as_dict_mut().unwrap())
+                {
+                    // Get the pages fonts
+                    if let Ok(fonts) = resource_dict
+                        .get_mut(b"Font")
+                        .map(|o| o.as_dict_mut().unwrap())
+                    {
+                        // Find the first unused font index - this is normally F1
+                        while fonts.has(format!("F{font_num}").as_bytes()) {
+                            font_num += 1;
+                        }
+                        fonts.set(format!("F{font_num}").as_bytes(), font_id);
+                    }
+                }
+            }
+
+            let content: Content = Content {
+                operations: vec![
+                    // Begin Text Element
+                    Operation::new("BT", vec![]),
+                    // Font Color
+                    Operation::new(
+                        "rg",
+                        vec![
+                            style.color.r.into(),
+                            style.color.g.into(),
+                            style.color.b.into(),
+                        ],
+                    ),
+                    // Font and Size
+                    Operation::new("Tf", vec![format!("F{font_num}").into(), style.size.into()]),
+                    // Set the text matrix, this is an affine transformation matrix which is used to veritically filp the text
+                    // and position it at the bottom of the page. The Vertical filp is required by due to how chrome renders the PDFs.
+                    // See section 4.2.2 in PDF Reference for more details.
+                    Operation::new(
+                        "Tm",
+                        vec![
+                            (1).into(),
+                            0.into(),
+                            0.into(),
+                            (-1).into(),
+                            (style.x * 300.0).into(), // Convert x from inches into dots by multplying by the standard 300 DPI
+                            (style.y * 300.0).into(),
+                        ],
+                    ),
+                    // Set the page number text
+                    Operation::new(
+                        "Tj",
+                        vec![Object::string_literal(format!("Page {}", page_num))],
+                    ),
+                    // End Text
+                    Operation::new("ET", vec![]),
+                ],
+            };
+            doc.add_to_page_content(page_id, content)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn merge_pdfs(conf: &Config, url_to_pdf_path: IndexMap<String, PathBuf>) -> Result<ExitCode> {
     let mut url_to_pdf_doc = IndexMap::new();
     for (url, path) in url_to_pdf_path {
@@ -329,6 +408,8 @@ pub fn merge_pdfs(conf: &Config, url_to_pdf_path: IndexMap<String, PathBuf>) -> 
     let mut pdf = build_pdf_from_objects(&parts)?;
 
     let problem_urls = rewrite_vitepress_links(conf, &mut pdf, url_to_page_num)?;
+
+    add_page_numbers(&mut pdf, conf)?;
 
     pdf.save(&conf.output_pdf)?;
 
@@ -558,6 +639,7 @@ mod tests {
             url: "http://example.com".to_string(),
             urls: IndexSet::new(),
             vitepress_links: Vec::new(),
+            page_number: None,
             print_to_pdf: PrintToPdfOptions::default(),
         };
         let mut map = IndexMap::new();
@@ -589,7 +671,7 @@ mod tests {
                 break;
             }
 
-            let annotations = pdf.get_page_annotations(page_id);
+            let annotations = pdf.get_page_annotations(page_id).unwrap();
 
             // Assert that there's no stray annotations
             assert_eq!(annotations.len(), 1);
