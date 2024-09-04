@@ -13,7 +13,7 @@ defaults:
     shell: bash -eux {0}
 
 jobs:
-  build:
+  build-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,16 +23,34 @@ jobs:
       - name: Install toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Run cargo test
+      - name: Run cargo build
         run: cargo build --release
       
       - uses: actions/upload-artifact@v4
         with:
-          name: vitepress-pdf-export
+          name: vitepress-pdf-export_macos
+          path: |
+            ./target/release/vitepress-pdf-export
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run cargo build
+        run: cargo build --release
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vitepress-pdf-export_linux
           path: |
             ./target/release/vitepress-pdf-export
   test:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
