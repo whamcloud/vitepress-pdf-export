@@ -11,7 +11,8 @@ This program does one thing well, export a VitPress site as nice PDF with correc
   * [X] with Outline
 * [X] Rewrites links between the URLS into PDF
 * [X] Add Merge Tests
-* [ ] Add Page Numbers
+* [X] Add Page Numbers
+  * [ ] Use existing fonts instead of PDF Type 1 fonts
 
 ## Supported Platforms
 Currently only `MacOS`, `MacOS Arm`, and `Linux` are supported.
