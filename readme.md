@@ -1,5 +1,5 @@
 # vitepress-pdf-export
-This program does one thing well, export a VitPress site as nice PDF with correct links and page numbers. Additionaly we expect `vitepress-pdf-export` to be run as part of a CI actions so all options are handled by a toml configuration file.
+This program does one thing well, export a VitePress site as nice PDF with correct links and page numbers. Additionaly we expect `vitepress-pdf-export` to be run as part of a CI actions so all options are handled by a toml configuration file.
 
 ## Status
 * [x] Fetches the latest Chrome Build
