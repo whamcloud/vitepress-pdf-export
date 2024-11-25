@@ -22,6 +22,10 @@ struct Args {
     #[arg(short = 'c', long)]
     config: PathBuf,
 
+    /// Overwrite the `output_pdf` defined in the config file
+    #[arg(short = 'o', long)]
+    output_pdf: Option<PathBuf>,
+
     /// Directory to save individual PDFs into.
     ///
     /// If this option is not defined individual PDFs will be removed.
@@ -51,7 +55,11 @@ async fn main() -> Result<ExitCode> {
     if args.merge_only && args.map.is_none() {
         println!("--map must defined when --merge_only")
     }
-    let config = Config::load(&args.config)?;
+    let mut config = Config::load(&args.config)?;
+
+    if let Some(output_pdf) = args.output_pdf {
+        config.output_pdf = output_pdf;
+    }
 
     let temp_dir = tempdir()?;
 
