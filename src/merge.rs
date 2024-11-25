@@ -16,6 +16,22 @@ struct PdfParts {
     pages: BTreeMap<ObjectId, Object>,
 }
 
+pub fn get_named_dests(doc: &Document) -> Result<IndexMap<Vec<u8>, lopdf::Object>> {
+    let catalog = doc.catalog()?;
+    let mut tree = doc.get_dict_in_dict(catalog, b"Dests");
+
+    if tree.is_err() {
+        let names = doc.get_dict_in_dict(catalog, b"Names");
+        if let Ok(names) = names {
+            let dests = doc.get_dict_in_dict(names, b"Dests");
+            if dests.is_ok() {
+                tree = dests;
+            }
+        }
+    }
+    Ok(tree.map(|d| d.as_hashmap().clone())?)
+}
+
 /// Loads PDFs into memory as PDF Objects and merges the PDF Objects
 fn merge_pdf_objects(
     url_to_pdf_doc: IndexMap<String, Document>,
@@ -53,6 +69,7 @@ fn merge_pdf_objects(
 fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
     // Catalog and Pages are mandatory
     let mut catalog_object: Option<(ObjectId, Object)> = None;
+    let mut destination_ids: Vec<ObjectId> = vec![];
     let mut outlines: Vec<((u32, u16), Dictionary)> = vec![];
     let mut pages_object: Option<(ObjectId, Object)> = None;
 
@@ -62,14 +79,15 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
         match object.type_name().unwrap_or("") {
             "Catalog" => {
                 // Collect a first "Catalog" object and use it for the future "Pages"
-                catalog_object = Some((
-                    if let Some((id, _)) = catalog_object {
-                        id
-                    } else {
-                        *object_id
-                    },
-                    object.clone(),
-                ));
+                if catalog_object.is_none() {
+                    catalog_object = Some((*object_id, object.clone()))
+                }
+                // Save the Destination IDs
+                if let Ok(dict) = object.as_dict() {
+                    if let Ok(dests) = dict.get(b"Dests") {
+                        destination_ids.push(dests.as_reference()?);
+                    }
+                }
             }
             "Pages" => {
                 // Collect and update a first "Pages" object and use it for the future "Catalog"
@@ -103,9 +121,22 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
         }
     }
 
+    // We have to collect the Destinations from each PDF here because the
+    // object may not yet be present in the combined document.
+    let mut destinations = Dictionary::new();
+    for destination_id in destination_ids {
+        destinations.as_hashmap_mut().extend(
+            document
+                .get_dictionary(destination_id)?
+                .as_hashmap()
+                .clone(),
+        );
+        document.delete_object(destination_id);
+    }
+
     // If no "Pages" found abort
     if pages_object.is_none() {
-        return Err(anyhow!("Pages root not found."));
+        return Err(anyhow!("No Pages found."));
     }
 
     // Iter over all "Page" and collect with the parent "Pages" created before
@@ -164,6 +195,9 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
                 dictionary.set(b"Outlines", id);
             }
         }
+
+        dictionary.set(b"Dests", Object::Dictionary(destinations));
+
         document
             .objects
             .insert(catalog_object.0, Object::Dictionary(dictionary));
@@ -239,7 +273,7 @@ fn rewrite_vitepress_links(
     conf: &Config,
     doc: &mut Document,
     url_to_page_num: IndexMap<String, usize>,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, Vec<String>)> {
     // Build a maping from URL to Page ID
     let page_num_to_id = doc.get_pages();
     let mut url_to_page_id = IndexMap::new();
@@ -248,11 +282,15 @@ fn rewrite_vitepress_links(
         url_to_page_id.insert(url, page_num_to_id.get(&page_num).unwrap());
     }
 
-    let mut problem_urls = vec![];
-    let mut to_rewrite: Vec<(ObjectId, ObjectId)> = vec![];
+    let mut problem_anchors: Vec<String> = vec![];
+    let mut problem_urls: Vec<String> = vec![];
+    let mut anchors_to_rewrite: Vec<(ObjectId, Object)> = vec![];
+    let mut urls_to_rewrite: Vec<(ObjectId, ObjectId)> = vec![];
+
+    let dests = get_named_dests(doc)?;
 
     // Go through the pages
-    for page_id in doc.page_iter() {
+    for (page_num, page_id) in doc.page_iter().enumerate() {
         // Get the Annoation ID and Object
         let mut annotations: Vec<(ObjectId, &Dictionary)> = vec![];
         if let Ok(page) = doc.get_dictionary(page_id) {
@@ -276,7 +314,7 @@ fn rewrite_vitepress_links(
             }
         }
 
-        // We go through found annotations
+        // We go through the found annotations
         for (annotation_id, annotation) in annotations {
             let subtype = annotation
                 .get_deref(b"Subtype", doc)
@@ -287,29 +325,67 @@ fn rewrite_vitepress_links(
                 // We've found a Annotation Link with an URL
                 if let Ok(ahref) = annotation.get_deref(b"A", doc).and_then(Object::as_dict) {
                     let mut url = ahref.get(b"URI")?.as_string()?.to_string();
+
+                    // We only care URLs that are part of our VitePress site.
+                    if !url.starts_with(&conf.url) {
+                        continue;
+                    }
+
                     let parts: Vec<&str> = url.split('/').collect();
-                    let page = parts.last().unwrap();
+                    let page = parts
+                        .last()
+                        .ok_or(anyhow!("Error extracting page from URI {url}"))?
+                        .to_string();
 
                     // For URLS that end in "/", a.k.a without a page, we set the page to index.html
                     if page.is_empty() {
                         url.push_str("index.html")
                     }
 
-                    match url_to_page_id.get(&url) {
-                        Some(page_id) => to_rewrite.push((annotation_id, **page_id)),
-                        None => {
-                            // We only care about
-                            if url.starts_with(&conf.url) {
-                                problem_urls.push(url);
+                    // Handle Anchors within a URL
+                    if page.contains('#') {
+                        let anchor = page
+                            .split('#')
+                            .last()
+                            .ok_or(anyhow!("Error extracting anchor from URI {url}"))?;
+                        match dests.get(anchor.as_bytes()) {
+                            Some(dest) => anchors_to_rewrite.push((annotation_id, dest.clone())),
+                            None => {
+                                problem_anchors.push(format!("Page No. {}: {url}", page_num + 1))
+                            } // +1 because enumerate is zero indexed but humans are one indexed.
+                        }
+                    // Hande Plain URLS
+                    } else {
+                        match url_to_page_id.get(&url) {
+                            Some(page_id) => urls_to_rewrite.push((annotation_id, **page_id)),
+                            None => {
+                                problem_urls.push(format!("Page No. {}: {url}", page_num + 1));
+                                // +1 because enumerate is zero indexed but humans are one indexed.
                             }
                         }
+                    }
+                // Dest conflicts with "A" and indicates an internal link that needs to be updated
+                } else if let Ok(anchor) = annotation.get(b"Dest").and_then(Object::as_name) {
+                    match dests.get(anchor) {
+                        Some(dest) => anchors_to_rewrite.push((annotation_id, dest.clone())),
+                        None => problem_anchors.push(format!(
+                            "Page No. {}: {}",
+                            page_num + 1,
+                            String::from_utf8_lossy(anchor)
+                        )),
                     }
                 }
             }
         }
     }
 
-    for (annotation_id, page_id) in to_rewrite {
+    for (annotation_id, dest) in anchors_to_rewrite {
+        let annot = doc.get_dictionary_mut(annotation_id)?;
+        // Insert the internal Page Destination
+        annot.set("Dest", dest);
+    }
+
+    for (annotation_id, page_id) in urls_to_rewrite {
         let annot = doc.get_dictionary_mut(annotation_id)?;
         // Delete the external Link
         annot.remove(b"A");
@@ -317,7 +393,7 @@ fn rewrite_vitepress_links(
         annot.set("Dest", Object::from(vec![page_id.into(), "Fit".into()]));
     }
 
-    Ok(problem_urls)
+    Ok((problem_urls, problem_anchors))
 }
 
 fn add_page_numbers(doc: &mut Document, conf: &Config) -> Result<()> {
@@ -330,7 +406,7 @@ fn add_page_numbers(doc: &mut Document, conf: &Config) -> Result<()> {
         });
 
         // Go through each page
-        let pages = doc.get_pages();
+        let pages: BTreeMap<u32, (u32, u16)> = doc.get_pages();
         for (page_num, page_id) in pages {
             let mut font_num = 1;
             // Get pages Resouces
@@ -407,22 +483,40 @@ pub fn merge_pdfs(conf: &Config, url_to_pdf_path: IndexMap<String, PathBuf>) -> 
 
     let mut pdf = build_pdf_from_objects(&parts)?;
 
-    let problem_urls = rewrite_vitepress_links(conf, &mut pdf, url_to_page_num)?;
+    let (problem_urls, problem_anchors) = rewrite_vitepress_links(conf, &mut pdf, url_to_page_num)?;
 
     add_page_numbers(&mut pdf, conf)?;
 
     pdf.save(&conf.output_pdf)?;
 
     println!("Merged PDF is avalible here {}", conf.output_pdf.display());
+
+    let mut retcode = ExitCode::SUCCESS;
     if !problem_urls.is_empty() {
         println!(
-            "Unable to remap these VitePress links.\n{}",
-            problem_urls.join("\n")
+            "Unable to remap these URLS.\n{}",
+            problem_urls
+                .iter()
+                .map(|s| format!("  * {s}"))
+                .collect::<Vec<String>>()
+                .join("\n")
         );
-        return Ok(ExitCode::FAILURE);
+        retcode = ExitCode::FAILURE;
     }
 
-    Ok(ExitCode::SUCCESS)
+    if !problem_anchors.is_empty() {
+        println!(
+            "Unable to remap these Anchors.\n{}",
+            problem_anchors
+                .iter()
+                .map(|s| format!("  * {s}"))
+                .collect::<Vec<String>>()
+                .join("\n")
+        );
+        retcode = ExitCode::FAILURE;
+    }
+
+    Ok(retcode)
 }
 
 #[cfg(test)]
@@ -660,7 +754,8 @@ mod tests {
 
         let mut pdf = build_pdf_from_objects(&parts).unwrap();
 
-        let problem_urls = rewrite_vitepress_links(&conf, &mut pdf, url_to_page_num).unwrap();
+        let (problem_urls, _problem_anchors) =
+            rewrite_vitepress_links(&conf, &mut pdf, url_to_page_num).unwrap();
 
         assert_eq!(problem_urls, vec!["http://example.com/4.html".to_string()]);
 

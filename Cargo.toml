@@ -9,7 +9,7 @@ license-file = "LICENSE"
 anyhow = "1.0.86"
 clap = {version = "4.5.13", features = ["derive"]}
 headless_chrome = { git = "https://github.com/whamcloud/rust-headless-chrome", branch = "update_cdp", features = ["fetch"]}
-indexmap = "2.3.0"
+indexmap = {version = "2.3.0", features = ["serde"]}
 indicatif = "0.17.8"
 lopdf = "0.34.0"
 reqwest = {version = "0.12.5", features = ["json"] }
