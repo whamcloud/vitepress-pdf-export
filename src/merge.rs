@@ -757,7 +757,7 @@ mod tests {
         let (problem_urls, _problem_anchors) =
             rewrite_vitepress_links(&conf, &mut pdf, url_to_page_num).unwrap();
 
-        assert_eq!(problem_urls, vec!["http://example.com/4.html".to_string()]);
+        assert_eq!(problem_urls, vec!["Page No. 3: http://example.com/4.html".to_string()]);
 
         let page_num_to_id = pdf.get_pages();
         for (page_num, page_id) in pdf.page_iter().enumerate() {
