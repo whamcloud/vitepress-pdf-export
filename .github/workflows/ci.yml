@@ -3,9 +3,6 @@ name: Build n Test
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - "ES*"
   workflow_dispatch:
 
 defaults:
