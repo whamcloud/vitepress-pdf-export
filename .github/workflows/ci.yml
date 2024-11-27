@@ -26,7 +26,7 @@ jobs:
       - name: Run cargo build
         run: cargo build --release
       
-      - run: zip vitepress-pdf-export_macos.zip ./target/release/vitepress-pdf-export
+      - run: zip -j vitepress-pdf-export_macos.zip ./target/release/vitepress-pdf-export
       
       - uses: actions/upload-artifact@v4
         with:
@@ -46,7 +46,7 @@ jobs:
       - name: Run cargo build
         run: cargo build --release
 
-      - run: zip vitepress-pdf-export_linux.zip ./target/release/vitepress-pdf-export
+      - run: zip -j vitepress-pdf-export_linux.zip ./target/release/vitepress-pdf-export
       
       - uses: actions/upload-artifact@v4
         with:
