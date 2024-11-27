@@ -56,13 +56,14 @@ jobs:
     needs: [build-mac, build-linux]
     steps:
       - uses: actions/download-artifact@v4
+      - run: ls -l
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          fail_on_unmatched_files: true
           files: |
             vitepress-pdf-export_macos.zip
             vitepress-pdf-export_linux.zip
-
   test:
     runs-on: ubuntu-latest
     steps:
