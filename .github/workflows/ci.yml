@@ -26,11 +26,13 @@ jobs:
       - name: Run cargo build
         run: cargo build --release
       
+      - run: zip vitepress-pdf-export_macos.zip ./target/release/vitepress-pdf-export
+      
       - uses: actions/upload-artifact@v4
         with:
           name: vitepress-pdf-export_macos
           path: |
-            ./target/release/vitepress-pdf-export
+            ./vitepress-pdf-export_macos.zip
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -43,12 +45,28 @@ jobs:
 
       - name: Run cargo build
         run: cargo build --release
+
+      - run: zip vitepress-pdf-export_linux.zip ./target/release/vitepress-pdf-export
       
       - uses: actions/upload-artifact@v4
         with:
           name: vitepress-pdf-export_linux
           path: |
-            ./target/release/vitepress-pdf-export
+            ./vitepress-pdf-export_linux.zip
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-mac, build-linux]
+    steps:
+      - uses: actions/download-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/')
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            vitepress-pdf-export_macos.zip
+            vitepress-pdf-export_linux.zip
+
   test:
     runs-on: ubuntu-latest
     steps:
