@@ -1,6 +1,6 @@
 [package]
 name = "vitepress-pdf-export"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Jonathan Parris jparris@ddn.com"]
 license-file = "LICENSE"

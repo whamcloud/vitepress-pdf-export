@@ -44,7 +44,7 @@ struct Args {
     ///
     /// The idea is run `vitepress --keep_pdfs pdfs --map map.json` which
     /// will render out the pdfs then run `vitepress --merge-onlys --map map.json`
-    #[arg(short = 'o', long, action)]
+    #[arg(long, action)]
     merge_only: bool,
 }
 
@@ -88,4 +88,15 @@ async fn main() -> Result<ExitCode> {
     }
 
     merge_pdfs(&config, url_to_pdf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Args;
+    use clap::CommandFactory as _;
+
+    #[test]
+    fn verify_cli() {
+        Args::command().debug_assert()
+    }
 }
