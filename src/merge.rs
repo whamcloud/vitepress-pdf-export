@@ -9,7 +9,7 @@ use lopdf::{
     content::{Content, Operation},
     dictionary, Dictionary, Document, Object, ObjectId,
 };
-use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
+use std::{collections::{BTreeMap, VecDeque}, path::PathBuf, process::ExitCode};
 
 struct PdfParts {
     objects: BTreeMap<ObjectId, Object>,
@@ -258,15 +258,49 @@ fn merge_outlines(
                 }
             };
         }
+
         let (parent_id, mut parent_obj, last_item_id) = state.clone().unwrap();
-        parent_obj.set("Count", Object::from(count));
-        parent_obj.set("Last", last_item_id);
+
+        if let Ok(first_outline) = parent_obj.get(b"First") {
+            fix_outlines(document, first_outline.as_reference()?, parent_id)?;
+        }
+
+        // We insert our Outlines Object here because we skiped inserting any Outlines Object in `build_pdf_from_objects`
+        parent_obj.set(b"Count", Object::from(count));
+        parent_obj.set(b"Last", last_item_id);
         document
             .objects
             .insert(parent_id, lopdf::Object::Dictionary(parent_obj));
+
         return Ok(Some(parent_id));
     }
     Ok(None)
+}
+
+// EHT-567 Chrome does not correctly set the Parent ID for Outline Objects leading to an Adobe Acrobat entering
+// an infinite loop. See https://issues.chromium.org/issues/383706655 for more info.
+fn fix_outlines(doc: &mut lopdf::Document, outline_id: lopdf::ObjectId, parent_id: lopdf::ObjectId) -> Result<()> {
+    let mut queue = VecDeque::new();
+
+    queue.push_back((outline_id, parent_id));
+
+    // Deep First walk using a Double Ended Queue
+    while let Some((outline_id, parent_id)) = queue.pop_front() {
+
+        let outline_obj = doc.get_dictionary_mut(outline_id)?;
+
+        outline_obj.set(b"Parent", parent_id);
+
+        if let Ok(child) = outline_obj.get(b"First") {
+            queue.push_back((child.as_reference()?, outline_id));
+        }
+
+        if let Ok(next) = outline_obj.get(b"Next") {
+            queue.push_back((next.as_reference()?, parent_id));
+        }
+    }
+
+    Ok(())
 }
 
 fn rewrite_vitepress_links(
