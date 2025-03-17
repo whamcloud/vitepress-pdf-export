@@ -284,7 +284,7 @@ fn fix_outlines(doc: &mut lopdf::Document, outline_id: lopdf::ObjectId, parent_i
 
     queue.push_back((outline_id, parent_id));
 
-    // Deep First walk using a Double Ended Queue
+    // Breadth-First walk using a Double Ended Queue
     while let Some((outline_id, parent_id)) = queue.pop_front() {
 
         let outline_obj = doc.get_dictionary_mut(outline_id)?;
