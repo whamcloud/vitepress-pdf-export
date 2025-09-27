@@ -4,6 +4,7 @@
 
 use crate::Config;
 use anyhow::{anyhow, Result};
+use headless_chrome::types::PrintToPdfOptions;
 use headless_chrome::{FetcherOptions, LaunchOptions, Revision};
 use indexmap::IndexMap;
 use indicatif::{style::ProgressStyle, ProgressBar};
@@ -125,7 +126,7 @@ pub async fn render_urls(
         let page_pdf = tab
             .navigate_to(url)?
             .wait_until_navigated()?
-            .print_to_pdf(Some(config.print_to_pdf.clone()))?;
+            .print_to_pdf(Some(copy_print_to_pdf_options(&config.print_to_pdf)))?;
 
         let path = pdf_temp_dir.join(format!("{i}.pdf"));
 
@@ -138,4 +139,27 @@ pub async fn render_urls(
 
     pb.finish_with_message("Finished Rendering URLs into PDFs");
     Ok(map)
+}
+
+fn copy_print_to_pdf_options(opts: &PrintToPdfOptions) -> PrintToPdfOptions {
+    PrintToPdfOptions {
+        landscape: opts.landscape,
+        display_header_footer: opts.display_header_footer,
+        print_background: opts.print_background,
+        scale: opts.scale,
+        paper_width: opts.paper_width,
+        paper_height: opts.paper_height,
+        margin_top: opts.margin_top,
+        margin_bottom: opts.margin_bottom,
+        margin_left: opts.margin_left,
+        margin_right: opts.margin_right,
+        page_ranges: opts.page_ranges.clone(),
+        ignore_invalid_page_ranges: opts.ignore_invalid_page_ranges,
+        header_template: opts.header_template.clone(),
+        footer_template: opts.footer_template.clone(),
+        prefer_css_page_size: opts.prefer_css_page_size,
+        transfer_mode: None, // field is not clone
+        generate_document_outline: opts.generate_document_outline,
+        generate_tagged_pdf: opts.generate_tagged_pdf,
+    }
 }
