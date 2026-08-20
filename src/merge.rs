@@ -787,6 +787,75 @@ mod tests {
         doc
     }
 
+    #[derive(Eq, Debug, Hash, PartialEq)]
+    struct Node {
+        title: String,
+        prev: Option<String>,
+        next: Option<String>,
+        parent: Option<String>,
+        childern: Vec<tests::Node>,
+    }
+
+    fn outline(doc: &lopdf::Document, outline_obj: &lopdf::Dictionary) -> Result<Node> {
+        let title = match outline_obj.get(b"Title") {
+            Ok(t) => t.as_string()?.to_string(),
+            Err(_) => "Outline Dictionary".to_string(),
+        };
+        let prev: Option<String> = match outline_obj.get(b"Prev") {
+            Ok(t) => Some(
+                doc.get_dictionary(t.as_reference()?)?
+                    .get(b"Title")?
+                    .as_string()?
+                    .to_string(),
+            ),
+            Err(_) => None,
+        };
+
+        let next: Option<String> = match outline_obj.get(b"Next") {
+            Ok(t) => Some(
+                doc.get_dictionary(t.as_reference()?)?
+                    .get(b"Title")?
+                    .as_string()?
+                    .to_string(),
+            ),
+            Err(_) => None,
+        };
+
+        let parent: Option<String> = match outline_obj.get(b"Parent") {
+            Ok(t) => {
+                let parent = doc.get_dictionary(t.as_reference()?)?;
+                Some(match parent.get(b"Title") {
+                    Ok(t) => t.as_string()?.to_string(),
+                    Err(_) => "Outline Dictionary".to_string(),
+                })
+            }
+            Err(_) => None,
+        };
+
+        let mut childern = vec![];
+        if let Ok(child) = outline_obj.get(b"First") {
+            let mut child = doc.get_object(child.as_reference()?)?.as_dict()?;
+
+            childern.push(outline(doc, child)?);
+
+            while child.has(b"Next") {
+                let child_id = child.get(b"Next")?.as_reference()?;
+
+                child = doc.get_object(child_id)?.as_dict()?;
+
+                childern.push(outline(doc, child)?);
+            }
+        }
+
+        Ok(Node {
+            title,
+            prev,
+            next,
+            parent,
+            childern,
+        })
+    }
+
     #[test]
     fn test_merge_toc() {
         let mut map = IndexMap::new();
@@ -957,74 +1026,5 @@ mod tests {
                 .unwrap(),
             *page_b_id
         );
-    }
-
-    #[derive(Eq, Debug, Hash, PartialEq)]
-    struct Node {
-        title: String,
-        prev: Option<String>,
-        next: Option<String>,
-        parent: Option<String>,
-        childern: Vec<tests::Node>,
-    }
-
-    fn outline(doc: &lopdf::Document, outline_obj: &lopdf::Dictionary) -> Result<Node> {
-        let title = match outline_obj.get(b"Title") {
-            Ok(t) => t.as_string()?.to_string(),
-            Err(_) => "Outline Dictionary".to_string(),
-        };
-        let prev: Option<String> = match outline_obj.get(b"Prev") {
-            Ok(t) => Some(
-                doc.get_dictionary(t.as_reference()?)?
-                    .get(b"Title")?
-                    .as_string()?
-                    .to_string(),
-            ),
-            Err(_) => None,
-        };
-
-        let next: Option<String> = match outline_obj.get(b"Next") {
-            Ok(t) => Some(
-                doc.get_dictionary(t.as_reference()?)?
-                    .get(b"Title")?
-                    .as_string()?
-                    .to_string(),
-            ),
-            Err(_) => None,
-        };
-
-        let parent: Option<String> = match outline_obj.get(b"Parent") {
-            Ok(t) => {
-                let parent = doc.get_dictionary(t.as_reference()?)?;
-                Some(match parent.get(b"Title") {
-                    Ok(t) => t.as_string()?.to_string(),
-                    Err(_) => "Outline Dictionary".to_string(),
-                })
-            }
-            Err(_) => None,
-        };
-
-        let mut childern = vec![];
-        if let Ok(child) = outline_obj.get(b"First") {
-            let mut child = doc.get_object(child.as_reference()?)?.as_dict()?;
-
-            childern.push(outline(doc, child)?);
-
-            while child.has(b"Next") {
-                let child_id = child.get(b"Next")?.as_reference()?;
-
-                child = doc.get_object(child_id)?.as_dict()?;
-
-                childern.push(outline(doc, child)?);
-            }
-        }
-
-        Ok(Node {
-            title,
-            prev,
-            next,
-            parent,
-            childern,
-        })
     }
 }
