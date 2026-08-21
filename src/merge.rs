@@ -9,11 +9,47 @@ use lopdf::{
     content::{Content, Operation},
     dictionary, Dictionary, Document, Object, ObjectId,
 };
-use std::{collections::{BTreeMap, VecDeque}, path::PathBuf, process::ExitCode};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    path::PathBuf,
+    process::ExitCode,
+};
 
 struct PdfParts {
     objects: BTreeMap<ObjectId, Object>,
     pages: BTreeMap<ObjectId, Object>,
+    /// Named destinations scoped by source page URL (`{url}#{anchor}`).
+    destinations: Dictionary,
+}
+
+/// Strip a fragment and treat a trailing `/` as `index.html`.
+///
+/// VitePress index pages are rendered as `.../index.html` but in-page links
+/// often keep the directory form (`.../multitenancy/#configuration`).
+fn normalize_page_url(url: &str) -> String {
+    let path = url.split_once('#').map(|(path, _)| path).unwrap_or(url);
+    if path.ends_with('/') {
+        format!("{path}index.html")
+    } else {
+        path.to_string()
+    }
+}
+
+/// Dest key unique to one VitePress page, e.g. `http://host/a/index.html#configuration`.
+fn namespaced_dest_key(page_url: &str, anchor: &[u8]) -> Vec<u8> {
+    let mut key = normalize_page_url(page_url).into_bytes();
+    key.push(b'#');
+    key.extend_from_slice(anchor);
+    key
+}
+
+/// Source URL of the VitePress page that produced `page_num` in the merged PDF.
+fn page_source_url(url_to_page_num: &IndexMap<String, usize>, page_num: usize) -> Option<&str> {
+    url_to_page_num
+        .iter()
+        .filter(|(_, start)| page_num >= **start)
+        .max_by_key(|(_, start)| *start)
+        .map(|(url, _)| url.as_str())
 }
 
 pub fn get_named_dests(doc: &Document) -> Result<IndexMap<Vec<u8>, lopdf::Object>> {
@@ -43,6 +79,7 @@ fn merge_pdf_objects(
     let mut objects = BTreeMap::new();
     let mut pages = BTreeMap::new();
     let mut starting_id = 1;
+    let mut destinations = Dictionary::new();
 
     for (url, mut doc) in url_to_pdf_doc {
         // Record the page where a PDF generate from `url` are inserted into the merged PDF.
@@ -54,6 +91,12 @@ fn merge_pdf_objects(
         doc.renumber_objects_with(starting_id);
         starting_id = doc.max_id + 1;
 
+        if let Ok(named_dests) = get_named_dests(&doc) {
+            for (anchor, destination) in named_dests {
+                destinations.set(namespaced_dest_key(&url, &anchor), destination);
+            }
+        }
+
         pages.extend(
             doc.get_pages()
                 .into_values()
@@ -63,7 +106,14 @@ fn merge_pdf_objects(
         objects.extend(doc.objects);
     }
 
-    Ok((PdfParts { objects, pages }, url_to_page_num))
+    Ok((
+        PdfParts {
+            objects,
+            pages,
+            destinations,
+        },
+        url_to_page_num,
+    ))
 }
 
 fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
@@ -82,7 +132,8 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
                 if catalog_object.is_none() {
                     catalog_object = Some((*object_id, object.clone()))
                 }
-                // Save the Destination IDs
+                // Save the Destination IDs so the source dictionaries can be removed
+                // after their entries have been namespaced in `merge_pdf_objects`.
                 if let Ok(dict) = object.as_dict() {
                     if let Ok(dests) = dict.get(b"Dests") {
                         destination_ids.push(dests.as_reference()?);
@@ -121,16 +172,9 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
         }
     }
 
-    // We have to collect the Destinations from each PDF here because the
-    // object may not yet be present in the combined document.
-    let mut destinations = Dictionary::new();
+    // Remove the original destination dictionaries after their entries were
+    // collected and namespaced in merge_pdf_objects().
     for destination_id in destination_ids {
-        destinations.as_hashmap_mut().extend(
-            document
-                .get_dictionary(destination_id)?
-                .as_hashmap()
-                .clone(),
-        );
         document.delete_object(destination_id);
     }
 
@@ -196,7 +240,7 @@ fn build_pdf_from_objects(parts: &PdfParts) -> Result<Document> {
             }
         }
 
-        dictionary.set(b"Dests", Object::Dictionary(destinations));
+        dictionary.set(b"Dests", Object::Dictionary(parts.destinations.clone()));
 
         document
             .objects
@@ -279,14 +323,17 @@ fn merge_outlines(
 
 // EHT-567 Chrome does not correctly set the Parent ID for Outline Objects leading to an Adobe Acrobat entering
 // an infinite loop. See https://issues.chromium.org/issues/383706655 for more info.
-fn fix_outlines(doc: &mut lopdf::Document, outline_id: lopdf::ObjectId, parent_id: lopdf::ObjectId) -> Result<()> {
+fn fix_outlines(
+    doc: &mut lopdf::Document,
+    outline_id: lopdf::ObjectId,
+    parent_id: lopdf::ObjectId,
+) -> Result<()> {
     let mut queue = VecDeque::new();
 
     queue.push_back((outline_id, parent_id));
 
     // Breadth-First walk using a Double Ended Queue
     while let Some((outline_id, parent_id)) = queue.pop_front() {
-
         let outline_obj = doc.get_dictionary_mut(outline_id)?;
 
         outline_obj.set(b"Parent", parent_id);
@@ -311,9 +358,9 @@ fn rewrite_vitepress_links(
     // Build a maping from URL to Page ID
     let page_num_to_id = doc.get_pages();
     let mut url_to_page_id = IndexMap::new();
-    for (url, page_num) in url_to_page_num {
-        let page_num: u32 = page_num as u32 + 1; // Get Pages starts indexing at 1
-        url_to_page_id.insert(url, page_num_to_id.get(&page_num).unwrap());
+    for (url, page_num) in &url_to_page_num {
+        let page_num: u32 = *page_num as u32 + 1; // Get Pages starts indexing at 1
+        url_to_page_id.insert(url.clone(), page_num_to_id.get(&page_num).unwrap());
     }
 
     let mut problem_anchors: Vec<String> = vec![];
@@ -358,31 +405,17 @@ fn rewrite_vitepress_links(
             if subtype.eq("Link") {
                 // We've found a Annotation Link with an URL
                 if let Ok(ahref) = annotation.get_deref(b"A", doc).and_then(Object::as_dict) {
-                    let mut url = ahref.get(b"URI")?.as_string()?.to_string();
+                    let url = ahref.get(b"URI")?.as_string()?.to_string();
 
                     // We only care URLs that are part of our VitePress site.
                     if !url.starts_with(&conf.url) {
                         continue;
                     }
 
-                    let parts: Vec<&str> = url.split('/').collect();
-                    let page = parts
-                        .last()
-                        .ok_or(anyhow!("Error extracting page from URI {url}"))?
-                        .to_string();
-
-                    // For URLS that end in "/", a.k.a without a page, we set the page to index.html
-                    if page.is_empty() {
-                        url.push_str("index.html")
-                    }
-
                     // Handle Anchors within a URL
-                    if page.contains('#') {
-                        let anchor = page
-                            .split('#')
-                            .last()
-                            .ok_or(anyhow!("Error extracting anchor from URI {url}"))?;
-                        match dests.get(anchor.as_bytes()) {
+                    if let Some((page_url, anchor)) = url.split_once('#') {
+                        let key = namespaced_dest_key(page_url, anchor.as_bytes());
+                        match dests.get(&key) {
                             Some(dest) => anchors_to_rewrite.push((annotation_id, dest.clone())),
                             None => {
                                 problem_anchors.push(format!("Page No. {}: {url}", page_num + 1))
@@ -390,7 +423,8 @@ fn rewrite_vitepress_links(
                         }
                     // Hande Plain URLS
                     } else {
-                        match url_to_page_id.get(&url) {
+                        let page_url = normalize_page_url(&url);
+                        match url_to_page_id.get(&page_url) {
                             Some(page_id) => urls_to_rewrite.push((annotation_id, **page_id)),
                             None => {
                                 problem_urls.push(format!("Page No. {}: {url}", page_num + 1));
@@ -400,7 +434,9 @@ fn rewrite_vitepress_links(
                     }
                 // Dest conflicts with "A" and indicates an internal link that needs to be updated
                 } else if let Ok(anchor) = annotation.get(b"Dest").and_then(Object::as_name) {
-                    match dests.get(anchor) {
+                    let destination = page_source_url(&url_to_page_num, page_num)
+                        .and_then(|source_url| dests.get(&namespaced_dest_key(source_url, anchor)));
+                    match destination {
                         Some(dest) => anchors_to_rewrite.push((annotation_id, dest.clone())),
                         None => problem_anchors.push(format!(
                             "Page No. {}: {}",
@@ -623,6 +659,35 @@ mod tests {
         doc
     }
 
+    fn add_named_dest(doc: &mut Document, name: &[u8]) {
+        let page_id = *doc.get_pages().values().next().unwrap();
+        let mut destinations = Dictionary::new();
+        destinations.set(name.to_vec(), vec![page_id.into(), "Fit".into()]);
+        let destinations_id = doc.add_object(destinations);
+        let catalog_id = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+        doc.get_dictionary_mut(catalog_id)
+            .unwrap()
+            .set(b"Dests", destinations_id);
+    }
+
+    fn convert_link_to_internal_dest(doc: &mut Document, name: &[u8]) {
+        let page_id = *doc.get_pages().values().next().unwrap();
+        let annotation_id = {
+            let page = doc.get_dictionary(page_id).unwrap();
+            page.get(b"Annots")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .first()
+                .unwrap()
+                .as_reference()
+                .unwrap()
+        };
+        let annotation = doc.get_dictionary_mut(annotation_id).unwrap();
+        annotation.remove(b"A");
+        annotation.set(b"Dest", Object::Name(name.to_vec()));
+    }
+
     pub fn generate_pdf_with_outline() -> Document {
         let mut doc = Document::with_version("1.7");
         let pages_id = doc.new_object_id();
@@ -722,6 +787,75 @@ mod tests {
         doc
     }
 
+    #[derive(Eq, Debug, Hash, PartialEq)]
+    struct Node {
+        title: String,
+        prev: Option<String>,
+        next: Option<String>,
+        parent: Option<String>,
+        childern: Vec<tests::Node>,
+    }
+
+    fn outline(doc: &lopdf::Document, outline_obj: &lopdf::Dictionary) -> Result<Node> {
+        let title = match outline_obj.get(b"Title") {
+            Ok(t) => t.as_string()?.to_string(),
+            Err(_) => "Outline Dictionary".to_string(),
+        };
+        let prev: Option<String> = match outline_obj.get(b"Prev") {
+            Ok(t) => Some(
+                doc.get_dictionary(t.as_reference()?)?
+                    .get(b"Title")?
+                    .as_string()?
+                    .to_string(),
+            ),
+            Err(_) => None,
+        };
+
+        let next: Option<String> = match outline_obj.get(b"Next") {
+            Ok(t) => Some(
+                doc.get_dictionary(t.as_reference()?)?
+                    .get(b"Title")?
+                    .as_string()?
+                    .to_string(),
+            ),
+            Err(_) => None,
+        };
+
+        let parent: Option<String> = match outline_obj.get(b"Parent") {
+            Ok(t) => {
+                let parent = doc.get_dictionary(t.as_reference()?)?;
+                Some(match parent.get(b"Title") {
+                    Ok(t) => t.as_string()?.to_string(),
+                    Err(_) => "Outline Dictionary".to_string(),
+                })
+            }
+            Err(_) => None,
+        };
+
+        let mut childern = vec![];
+        if let Ok(child) = outline_obj.get(b"First") {
+            let mut child = doc.get_object(child.as_reference()?)?.as_dict()?;
+
+            childern.push(outline(doc, child)?);
+
+            while child.has(b"Next") {
+                let child_id = child.get(b"Next")?.as_reference()?;
+
+                child = doc.get_object(child_id)?.as_dict()?;
+
+                childern.push(outline(doc, child)?);
+            }
+        }
+
+        Ok(Node {
+            title,
+            prev,
+            next,
+            parent,
+            childern,
+        })
+    }
+
     #[test]
     fn test_merge_toc() {
         let mut map = IndexMap::new();
@@ -791,7 +925,10 @@ mod tests {
         let (problem_urls, _problem_anchors) =
             rewrite_vitepress_links(&conf, &mut pdf, url_to_page_num).unwrap();
 
-        assert_eq!(problem_urls, vec!["Page No. 3: http://example.com/4.html".to_string()]);
+        assert_eq!(
+            problem_urls,
+            vec!["Page No. 3: http://example.com/4.html".to_string()]
+        );
 
         let page_num_to_id = pdf.get_pages();
         for (page_num, page_id) in pdf.page_iter().enumerate() {
@@ -823,72 +960,71 @@ mod tests {
         }
     }
 
-    #[derive(Eq, Debug, Hash, PartialEq)]
-    struct Node {
-        title: String,
-        prev: Option<String>,
-        next: Option<String>,
-        parent: Option<String>,
-        childern: Vec<tests::Node>,
-    }
-
-    fn outline(doc: &lopdf::Document, outline_obj: &lopdf::Dictionary) -> Result<Node> {
-        let title = match outline_obj.get(b"Title") {
-            Ok(t) => t.as_string()?.to_string(),
-            Err(_) => "Outline Dictionary".to_string(),
-        };
-        let prev: Option<String> = match outline_obj.get(b"Prev") {
-            Ok(t) => Some(
-                doc.get_dictionary(t.as_reference()?)?
-                    .get(b"Title")?
-                    .as_string()?
-                    .to_string(),
-            ),
-            Err(_) => None,
+    #[test]
+    fn test_rewrite_duplicate_anchors_using_page_url() {
+        let conf = Config {
+            chrome_cache: PathBuf::new(),
+            chrome_version: None,
+            output_pdf: PathBuf::new(),
+            url: "http://example.com".to_string(),
+            urls: IndexSet::new(),
+            vitepress_links: Vec::new(),
+            page_number: None,
+            print_to_pdf: PrintToPdfOptions::default(),
         };
 
-        let next: Option<String> = match outline_obj.get(b"Next") {
-            Ok(t) => Some(
-                doc.get_dictionary(t.as_reference()?)?
-                    .get(b"Title")?
-                    .as_string()?
-                    .to_string(),
-            ),
-            Err(_) => None,
-        };
+        let mut page_a =
+            generate_pdf_with_link("http://example.com/a.html#configuration".to_string());
+        add_named_dest(&mut page_a, b"configuration");
 
-        let parent: Option<String> = match outline_obj.get(b"Parent") {
-            Ok(t) => {
-                let parent = doc.get_dictionary(t.as_reference()?)?;
-                Some(match parent.get(b"Title") {
-                    Ok(t) => t.as_string()?.to_string(),
-                    Err(_) => "Outline Dictionary".to_string(),
-                })
-            }
-            Err(_) => None,
-        };
+        let mut page_b = generate_pdf_with_link("#configuration".to_string());
+        add_named_dest(&mut page_b, b"configuration");
+        convert_link_to_internal_dest(&mut page_b, b"configuration");
 
-        let mut childern = vec![];
-        if let Ok(child) = outline_obj.get(b"First") {
-            let mut child = doc.get_object(child.as_reference()?)?.as_dict()?;
+        let mut map = IndexMap::new();
+        map.insert("http://example.com/a.html".to_string(), page_a);
+        map.insert("http://example.com/b.html".to_string(), page_b);
 
-            childern.push(outline(doc, child)?);
+        let (parts, url_to_page_num) = merge_pdf_objects(map).unwrap();
+        let mut pdf = build_pdf_from_objects(&parts).unwrap();
+        let (problem_urls, problem_anchors) =
+            rewrite_vitepress_links(&conf, &mut pdf, url_to_page_num).unwrap();
 
-            while child.has(b"Next") {
-                let child_id = child.get(b"Next")?.as_reference()?;
+        assert!(problem_urls.is_empty());
+        assert!(problem_anchors.is_empty());
 
-                child = doc.get_object(child_id)?.as_dict()?;
+        let page_ids = pdf.get_pages();
+        let page_a_id = page_ids.get(&1).unwrap();
+        let page_b_id = page_ids.get(&2).unwrap();
 
-                childern.push(outline(doc, child)?);
-            }
-        }
+        let page_a_annotations = pdf.get_page_annotations(*page_a_id).unwrap();
+        let page_a_annotation = page_a_annotations.first().unwrap();
+        let page_b_annotations = pdf.get_page_annotations(*page_b_id).unwrap();
+        let page_b_annotation = page_b_annotations.first().unwrap();
 
-        Ok(Node {
-            title,
-            prev,
-            next,
-            parent,
-            childern,
-        })
+        assert_eq!(
+            page_a_annotation
+                .get_deref(b"Dest", &pdf)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .first()
+                .unwrap()
+                .as_reference()
+                .unwrap(),
+            *page_a_id
+        );
+        assert_eq!(
+            page_b_annotation
+                .get_deref(b"Dest", &pdf)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .first()
+                .unwrap()
+                .as_reference()
+                .unwrap(),
+            *page_b_id
+        );
     }
 }
